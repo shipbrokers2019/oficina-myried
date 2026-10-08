@@ -510,6 +510,20 @@ let installEvt=null;
 window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();installEvt=e;});
 window.addEventListener("appinstalled",()=>{installEvt=null;toast("App instalada");});
 const stamp=()=>today();
+/* Abre el menú Compartir de Android (Drive, WhatsApp, Gmail…). Si el celular no lo permite, descarga el archivo. */
+async function shareOrDownload(name,content,type,title){
+  if(navigator.share&&navigator.canShare){
+    const base=name.replace(/\.[^.]+$/,"");
+    const tries=[new File([content],name,{type}),new File([content],base+".txt",{type:"text/plain"})];
+    for(const f of tries){
+      let ok=false;try{ok=navigator.canShare({files:[f]});}catch(_){}
+      if(!ok)continue;
+      try{await navigator.share({files:[f],title,text:title});return"shared";}
+      catch(e){if(e&&e.name==="AbortError")return"cancel";break;}
+    }
+  }
+  download(name,content,type);return"downloaded";
+}
 function download(name,content,type){const blob=new Blob([content],{type});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1500);}
 function csv(rows,cols){const q=v=>{v=v==null?"":String(v);return /[;"\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};return"﻿"+[cols.map(c=>q(c[1])).join(";")].concat(rows.map(r=>cols.map(c=>q(typeof c[0]==="function"?c[0](r):r[c[0]])).join(";"))).join("\r\n");}
 function lastBackup(){try{return localStorage.getItem("oficinaMyried.ultimoRespaldo")||"";}catch(_){return"";}}
@@ -518,23 +532,27 @@ function sheetAjustes(){
   openSheet("Respaldo y ajustes",`
    <div class="card"><span class="t" style="font-size:15px">Tus datos</span><span class="sub">Se guardan solo en este celular (${LDB.count()} registros). No dependen de internet ni de ninguna cuenta.</span>
    <span class="sub ${lb?"":"late"}">Último respaldo: ${lb?fD(lb)+"/"+lb.slice(0,4):"nunca"}</span>
-   <div class="acts"><button class="b pri" type="button" data-act="backup">Descargar copia de seguridad</button><button class="b" type="button" data-act="restore">Restaurar una copia</button></div>
-   <input type="file" id="fileRestore" accept=".json,application/json" hidden>
-   <span class="note">Haz una copia cada semana y guárdala en Google Drive o envíatela por WhatsApp. Si cambias de celular o borras los datos de Chrome, la restauras aquí.</span></div>
-   <div class="card"><span class="t" style="font-size:15px">Exportar a Excel</span><span class="sub">Descarga una tabla (CSV) que se abre en Excel o Google Sheets.</span>
+   <div class="acts"><button class="b pri" type="button" data-act="backup">Guardar copia de seguridad</button><button class="b" type="button" data-act="restore">Restaurar una copia</button></div>
+   <input type="file" id="fileRestore" accept=".json,.txt,application/json,text/plain" hidden>
+   <span class="note">Al tocar «Guardar copia» se abre el menú Compartir: elige <b>Drive</b> o envíatela por <b>WhatsApp</b>. Hazlo cada semana. Si cambias de celular o borras los datos de Chrome, la restauras aquí con «Restaurar una copia».</span></div>
+   <div class="card"><span class="t" style="font-size:15px">Exportar a Excel</span><span class="sub">Envía o guarda una tabla (CSV) que se abre en Excel o Google Sheets.</span>
    <div class="acts"><button class="b" type="button" data-act="csv-casos">Atención</button><button class="b" type="button" data-act="csv-ops">Ventas</button><button class="b" type="button" data-act="csv-contactos">Clientes</button><button class="b" type="button" data-act="csv-regs">Documentos</button></div></div>
    <div class="card"><span class="t" style="font-size:15px">Instalar en el celular</span>
    ${standalone?'<span class="sub">✅ Ya la estás usando como app instalada.</span>':installEvt?'<span class="sub">Agrega el ícono a tu pantalla de inicio.</span><div class="acts"><button class="b pri" type="button" data-act="install">Instalar app</button></div>':'<span class="sub">En Chrome toca el menú ⋮ y elige «Agregar a la pantalla principal» o «Instalar app».</span>'}</div>
    <div class="card"><span class="t" style="font-size:15px">Empezar de cero</span><span class="sub">Borra todos los casos, ventas, clientes, documentos y plantillas editadas de este celular.</span>
    <div class="acts"><button class="b danger" type="button" data-act="wipe">Borrar todos los datos</button></div></div>`);
-  sheet.backup=()=>{download("oficina-myried-respaldo-"+stamp()+".json",JSON.stringify({app:"oficina-myried",version:1,fecha:new Date().toISOString(),datos:LDB.dump()},null,1),"application/json");try{localStorage.setItem("oficinaMyried.ultimoRespaldo",today());}catch(_){}toast("Copia descargada");setTimeout(sheetAjustes,400);};
+  sheet.backup=async()=>{
+    const r=await shareOrDownload("oficina-myried-respaldo-"+stamp()+".json",JSON.stringify({app:"oficina-myried",version:1,fecha:new Date().toISOString(),datos:LDB.dump()}),"application/json","Copia de seguridad Oficina Myried "+fD(today()));
+    if(r==="cancel")return toast("No se guardó la copia");
+    try{localStorage.setItem("oficinaMyried.ultimoRespaldo",today());}catch(_){}
+    toast(r==="shared"?"Copia enviada":"Copia guardada en Descargas");setTimeout(sheetAjustes,400);};
   sheet.restore=()=>$("fileRestore").click();
   sheet.csv=k=>{
     const cfg={casos:[S.casos,[["entrada","Llegó"],["cliente","Cliente"],["canal","Canal"],["motivo","Motivo"],["descripcion","Qué pide"],["estado","Estado"],["primera","Primera respuesta"],["cierre","Resuelto"],["csat","Calificación"]]],
       ops:[S.ops,[["titulo","Venta"],[o=>cName(o.contactoId),"Cliente"],["monto","Monto USD"],["etapa","Etapa"],["proximoPaso","Próximo paso"],["proximaFecha","Fecha próximo paso"],["cierreEstimado","Entrega estimada"],["cerradoEl","Cerrada el"],["notas","Notas"]]],
       contactos:[S.contactos,[["nombre","Nombre"],["telefono","Teléfono"],["origen","Origen"],["correo","Correo"],["empresa","Empresa"],["notas","Notas"]]],
       regs:[S.regs,[["fecha","Fecha"],["tipo","Tipo"],["categoria","Categoría"],["asunto","Asunto"],["contacto","De / para"],["accion","Acción"],["limite","Límite"],["estado","Estado"],["enlace","Enlace"]]]}[k];
-    download("oficina-"+k+"-"+stamp()+".csv",csv(cfg[0],cfg[1]),"text/csv;charset=utf-8");toast("Archivo descargado");};
+    shareOrDownload("oficina-"+k+"-"+stamp()+".csv",csv(cfg[0],cfg[1]),"text/csv","Oficina Myried – "+k).then(r=>toast(r==="shared"?"Archivo enviado":r==="cancel"?"Cancelado":"Archivo guardado en Descargas"));};
   sheet.install=async()=>{if(!installEvt)return;installEvt.prompt();try{await installEvt.userChoice;}catch(_){}installEvt=null;sheetAjustes();};
   sheet.wipe=()=>{LDB.clear();closeSheet();toast("Datos borrados");};
   $("fileRestore").addEventListener("change",e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();
@@ -555,7 +573,7 @@ if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catc
   sub2("casos","casos");sub2("contactos","contactos");sub2("oportunidades","ops");sub2("actividades","acts");sub2("registros","regs");
   db.collection("plantillas").onSnapshot(s=>{S.tpl={};s.docs.forEach(d=>S.tpl[d.id]=d.data());if(tab==="tpl")viewT();},()=>{});
   db.doc("ajustes/general").onSnapshot(s=>{const v=s.exists?s.data().slaHoras:null;if(v>0&&v!==S.sla){S.sla=v;const i=$("slaH");if(i&&document.activeElement!==i)i.value=v;refresh();}},()=>{});
-  const lb=lastBackup();if(LDB.count()>0&&(!lb||lb<addDays(today(),-7)))setTimeout(()=>toast("Recuerda descargar tu copia de seguridad (⚙ Respaldo)"),1500);
+  const lb=lastBackup();if(LDB.count()>0&&(!lb||lb<addDays(today(),-7)))setTimeout(()=>toast("Recuerda guardar tu copia de seguridad (⚙ Respaldo)"),1500);
 })();
 })();
 </script>
