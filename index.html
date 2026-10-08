@@ -511,18 +511,21 @@ window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();installEvt=
 window.addEventListener("appinstalled",()=>{installEvt=null;toast("App instalada");});
 const stamp=()=>today();
 /* Abre el menú Compartir de Android (Drive, WhatsApp, Gmail…). Si el celular no lo permite, descarga el archivo. */
+let lastShareWhy="";
 async function shareOrDownload(name,content,type,title){
+  let why="sin menú Compartir";
   if(navigator.share&&navigator.canShare){
     const base=name.replace(/\.[^.]+$/,"");
-    const tries=[new File([content],name,{type}),new File([content],base+".txt",{type:"text/plain"})];
-    for(const f of tries){
-      let ok=false;try{ok=navigator.canShare({files:[f]});}catch(_){}
-      if(!ok)continue;
-      try{await navigator.share({files:[f],title,text:title});return"shared";}
-      catch(e){if(e&&e.name==="AbortError")return"cancel";break;}
-    }
+    // Android acepta siempre archivos de texto (.txt / .csv); se elige el primero que el celular permita.
+    const cands=type==="text/csv"?[new File([content],name,{type:"text/csv"}),new File([content],base+".txt",{type:"text/plain"})]
+      :[new File([content],base+".txt",{type:"text/plain"}),new File([content],name,{type})];
+    const f=cands.find(x=>{try{return navigator.canShare({files:[x]});}catch(_){return false;}});
+    if(f){
+      try{await navigator.share({files:[f]});return"shared";}
+      catch(e){if(e&&e.name==="AbortError")return"cancel";why=(e&&e.name)||"error";}
+    }else why="tipo de archivo no permitido";
   }
-  download(name,content,type);return"downloaded";
+  download(name,content,type);lastShareWhy=why;return"downloaded";
 }
 function download(name,content,type){const blob=new Blob([content],{type});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1500);}
 function csv(rows,cols){const q=v=>{v=v==null?"":String(v);return /[;"\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};return"﻿"+[cols.map(c=>q(c[1])).join(";")].concat(rows.map(r=>cols.map(c=>q(typeof c[0]==="function"?c[0](r):r[c[0]])).join(";"))).join("\r\n");}
@@ -545,7 +548,7 @@ function sheetAjustes(){
     const r=await shareOrDownload("oficina-myried-respaldo-"+stamp()+".json",JSON.stringify({app:"oficina-myried",version:1,fecha:new Date().toISOString(),datos:LDB.dump()}),"application/json","Copia de seguridad Oficina Myried "+fD(today()));
     if(r==="cancel")return toast("No se guardó la copia");
     try{localStorage.setItem("oficinaMyried.ultimoRespaldo",today());}catch(_){}
-    toast(r==="shared"?"Copia enviada":"Copia guardada en Descargas");setTimeout(sheetAjustes,400);};
+    toast(r==="shared"?"Copia enviada":"Copia guardada en Descargas ("+lastShareWhy+")");setTimeout(sheetAjustes,400);};
   sheet.restore=()=>$("fileRestore").click();
   sheet.csv=k=>{
     const cfg={casos:[S.casos,[["entrada","Llegó"],["cliente","Cliente"],["canal","Canal"],["motivo","Motivo"],["descripcion","Qué pide"],["estado","Estado"],["primera","Primera respuesta"],["cierre","Resuelto"],["csat","Calificación"]]],
@@ -564,7 +567,7 @@ $("sheet").addEventListener("click",e=>{const b=e.target.closest("[data-act]");i
   if(a.startsWith("csv-"))sheet.csv(a.slice(4));
   if(a==="wipe"){if(b.dataset.c!=="1"){b.dataset.c="1";b.textContent="Toca otra vez para borrar todo";return;}sheet.wipe();}});
 
-const APP_VERSION="3";
+const APP_VERSION="4";
 if("serviceWorker" in navigator&&/^https?:$/.test(location.protocol)){
   navigator.serviceWorker.register("sw.js",{updateViaCache:"none"}).then(r=>{r.update().catch(()=>{});document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")r.update().catch(()=>{});});}).catch(()=>{});
   let reloaded=false;navigator.serviceWorker.addEventListener("controllerchange",()=>{if(reloaded)return;reloaded=true;location.reload();});
