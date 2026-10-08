@@ -539,7 +539,7 @@ function sheetAjustes(){
    <div class="acts"><button class="b" type="button" data-act="csv-casos">Atención</button><button class="b" type="button" data-act="csv-ops">Ventas</button><button class="b" type="button" data-act="csv-contactos">Clientes</button><button class="b" type="button" data-act="csv-regs">Documentos</button></div></div>
    <div class="card"><span class="t" style="font-size:15px">Instalar en el celular</span>
    ${standalone?'<span class="sub">✅ Ya la estás usando como app instalada.</span>':installEvt?'<span class="sub">Agrega el ícono a tu pantalla de inicio.</span><div class="acts"><button class="b pri" type="button" data-act="install">Instalar app</button></div>':'<span class="sub">En Chrome toca el menú ⋮ y elige «Agregar a la pantalla principal» o «Instalar app».</span>'}</div>
-   <div class="card"><span class="t" style="font-size:15px">Empezar de cero</span><span class="sub">Borra todos los casos, ventas, clientes, documentos y plantillas editadas de este celular.</span>
+   <p class="note" style="text-align:center">Oficina Myried · versión ${APP_VERSION}</p><div class="card"><span class="t" style="font-size:15px">Empezar de cero</span><span class="sub">Borra todos los casos, ventas, clientes, documentos y plantillas editadas de este celular.</span>
    <div class="acts"><button class="b danger" type="button" data-act="wipe">Borrar todos los datos</button></div></div>`);
   sheet.backup=async()=>{
     const r=await shareOrDownload("oficina-myried-respaldo-"+stamp()+".json",JSON.stringify({app:"oficina-myried",version:1,fecha:new Date().toISOString(),datos:LDB.dump()}),"application/json","Copia de seguridad Oficina Myried "+fD(today()));
@@ -564,7 +564,11 @@ $("sheet").addEventListener("click",e=>{const b=e.target.closest("[data-act]");i
   if(a.startsWith("csv-"))sheet.csv(a.slice(4));
   if(a==="wipe"){if(b.dataset.c!=="1"){b.dataset.c="1";b.textContent="Toca otra vez para borrar todo";return;}sheet.wipe();}});
 
-if("serviceWorker" in navigator&&/^https?:$/.test(location.protocol))navigator.serviceWorker.register("sw.js").catch(()=>{});
+const APP_VERSION="3";
+if("serviceWorker" in navigator&&/^https?:$/.test(location.protocol)){
+  navigator.serviceWorker.register("sw.js",{updateViaCache:"none"}).then(r=>{r.update().catch(()=>{});document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")r.update().catch(()=>{});});}).catch(()=>{});
+  let reloaded=false;navigator.serviceWorker.addEventListener("controllerchange",()=>{if(reloaded)return;reloaded=true;location.reload();});
+}
 if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});
 
 (()=>{
